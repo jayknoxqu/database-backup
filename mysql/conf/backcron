@@ -1,0 +1,2 @@
+# 每天凌晨4点15分执行备份
+15 4 * * * /usr/local/database-backup/mysql/bin/backup.sh >/dev/null 2>&1

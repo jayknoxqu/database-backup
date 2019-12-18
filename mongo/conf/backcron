@@ -1,0 +1,2 @@
+# 每天凌晨3点15分执行备份
+15 3 * * * /usr/local/database-backup/mongo/bin/backup.sh >/dev/null 2>&1
