@@ -69,7 +69,7 @@ ossutil具体使用方法可查看[官方文档](https://help.aliyun.com/documen
 #### 克隆脚本到本地
 
 ```bash
-git clone https://github.com/jayknoxqu/database-backup.git /usr/local
+git clone https://github.com/jayknoxqu/database-backup.git /usr/local/database-backup
 ```
 
 
