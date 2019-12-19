@@ -4,7 +4,7 @@
 # Email         : jayknoxqu@gmail.com
 # Date          : 2019.12.18
 # Version       : 1.0.0
-# Description   : This script is backup mongodb databases
+# Description   : This script is backup mongodb databases and upload to aliyun oss
 # ==============================================================================
 
 # 备份日期
@@ -37,11 +37,23 @@ backup_dir=$(sed '/^backup_dir\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
 retain_days=$(sed '/^retain_days\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
 # mongodump命令路径
 mongodump_bin=$(sed '/^mongodump_bin\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
-
 # mongo 全备前缀标识
 full_backup_prefix=$(sed '/^full_backup_prefix\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
 # 备份错误日志文件
 error_log=$logs_dir/$(sed '/^error_log\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+
+# 阿里云OSS Bucket
+oss_bucket=$(sed '/^oss_bucket\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+# 自定义一个命名空间
+oos_namespaces=$(sed '/^oos_namespaces\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+# 阿里云OSS Endpoint
+oss_endpoint=$(sed '/^oss_endpoint\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+# 阿里云OSS AccessKeyId
+oss_accesskeyid=$(sed '/^oss_accesskeyid\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+# 阿里云OSS AccessKeySecret
+oss_accesskeysecret=$(sed '/^oss_accesskeysecret\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+# 阿里云ossutil命令路径
+ossutil_bin=$(sed '/^ossutil_bin\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
 
 # 创建相关文件
 mkdir -p $logs_dir $backup_dir
@@ -52,19 +64,31 @@ function full_backup() {
 
   $mongodump_bin \
     --host $host --port $port --username $username --password $password \
-    --gzip $params --archive >$backup_dir/$backup_name.archive.gz \
-    2>$logs_dir/${backup_name}.log
+    --gzip $params --archive >$backup_dir/${backup_name}.archive.gz \
+    2>$logs_dir/${backup_name}_backup.log
 
   return $?
+}
+
+# 发送备份到远程
+function send_backup_to_remote() {
+  backup_name=${1}_${backup_date}_${backup_time}_${backup_week_day}
+
+  $ossutil_bin \
+    cp $backup_dir/${backup_name}.archive.gz \
+    oss://$oss_bucket/$oos_namespaces/mongo/archives/${backup_name}.archive.gz \
+    -f -e $oss_endpoint -i $oss_accesskeyid -k $oss_accesskeysecret \
+    >$logs_dir/${backup_name}_upload.log 2>&1
+
 }
 
 # 删除之前的备份(一般在全备完成后使用)
 function delete_before_backup() {
 
-  # 删除 3 天前的备份日志
+  # 删除n天前的备份日志
   find $logs_dir -name '*.log' -mtime +$retain_days -delete
 
-  # 删除 3 天前的备份文件
+  # 删除n天前的备份文件
   find $backup_dir -name '*.archive.gz' -mtime +$retain_days -delete
 
 }
@@ -82,14 +106,10 @@ function purge_err_log() {
   : >$error_log
 }
 
-# 发送备份到远程
-function send_backup_to_remote() {
-  echo "send $1 remote ok"
-}
 
 # 测试配置文件正确性
 function test_conf_file() {
-  # 判断每个变量是否在配置文件中有配置，没有则退出程序
+  # verify mongo-config
   if [ -z "$host" ]; then
     echo 'fail: configure file host not set'
     exit 2
@@ -127,6 +147,31 @@ function test_conf_file() {
     exit 2
   fi
 
+  # verify oss-config
+  if [ -z "$oss_bucket" ]; then
+    echo 'fail: configure file oss_bucket not set'
+    exit 2
+  fi
+  if [ -z "$oos_namespaces" ]; then
+    echo 'fail: configure file oos_namespaces not set'
+    exit 2
+  fi
+  if [ -z "$oss_endpoint" ]; then
+    echo 'fail: configure file oss_endpoint not set'
+    exit 2
+  fi
+  if [ -z "$oss_accesskeyid" ]; then
+    echo 'fail: configure file oss_accesskeyid not set'
+    exit 2
+  fi
+  if [ -z "$oss_accesskeysecret" ]; then
+    echo 'fail: configure file oss_accesskeysecret not set'
+    exit 2
+  fi
+  if [ -z "$ossutil_bin" ]; then
+    echo 'fail: configure file ossutil_bin not set'
+    exit 2
+  fi
 }
 
 # 执行

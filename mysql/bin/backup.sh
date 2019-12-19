@@ -4,7 +4,7 @@
 # Email         : jayknoxqu@gmail.com
 # Date          : 2019.12.18
 # Version       : 1.0.0
-# Description   : This script is backup mysql databases
+# Description   : This script is backup mysql databases and upload to aliyun oss
 # ==============================================================================
 
 # 备份日期
@@ -44,35 +44,60 @@ error_log=$logs_dir/$(sed '/^error_log\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_fi
 # 备份索引文件
 index_file=$index_dir/$(sed '/^index_file\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
 
+# 阿里云OSS Bucket
+oss_bucket=$(sed '/^oss_bucket\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+# 自定义一个命名空间
+oos_namespaces=$(sed '/^oos_namespaces\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+# 阿里云OSS Endpoint
+oss_endpoint=$(sed '/^oss_endpoint\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+# 阿里云OSS AccessKeyId
+oss_accesskeyid=$(sed '/^oss_accesskeyid\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+# 阿里云OSS AccessKeySecret
+oss_accesskeysecret=$(sed '/^oss_accesskeysecret\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+# 阿里云ossutil命令路径
+ossutil_bin=$(sed '/^ossutil_bin\(\|\s\+\)=/!d;s/.*=\(\|\s\+\)//' $conf_file)
+
 # 创建相关文件
 mkdir -p $logs_dir $index_dir $gzip_dir $backup_dir
 
 # 全量备份
 function full_backup() {
-  backup_folder=${full_backup_prefix}_${backup_date}_${backup_time}_${backup_week_day}
-  mkdir -p $backup_dir/$backup_folder
+  backup_name=${full_backup_prefix}_${backup_date}_${backup_time}_${backup_week_day}
+  mkdir -p $backup_dir/${backup_name}
   $xtrabackup_bin \
     --user=$username \
     --password=$password \
     --backup \
-    --target-dir=$backup_dir/$backup_folder >$logs_dir/${backup_folder}.log 2>&1
+    --target-dir=$backup_dir/${backup_name} >$logs_dir/${backup_name}_backup.log 2>&1
   return $?
 }
 
 # 增量备份
 function increment_backup() {
-  backup_folder=${increment_prefix}_${backup_date}_${backup_time}_${backup_week_day}
-  incr_base_folder=$(sed -n '$p' $index_file |
+  backup_name=${increment_prefix}_${backup_date}_${backup_time}_${backup_week_day}
+  incr_base_name=$(sed -n '$p' $index_file |
     awk -F '[, {}]*' '{print $3}' |
     awk -F ':' '{print $2}')
-  mkdir -p $backup_dir/$backup_folder
+  mkdir -p $backup_dir/${backup_name}
   $xtrabackup_bin \
     --user=$username \
     --password=$password \
     --backup \
-    --target-dir=$backup_dir/$backup_folder \
-    --incremental-basedir=$backup_dir/$incr_base_folder >$logs_dir/${backup_folder}.log 2>&1
+    --target-dir=$backup_dir/${backup_name} \
+    --incremental-basedir=$backup_dir/$incr_base_name >$logs_dir/${backup_name}_backup.log 2>&1
   return $?
+}
+
+# 发送备份到远程
+function send_backup_to_remote() {
+  backup_name=${1}_${backup_date}_${backup_time}_${backup_week_day}
+
+  $ossutil_bin \
+    cp $gzip_dir/${backup_name}.tar.bz2 \
+    oss://$oss_bucket/$oos_namespaces/mysql/archives/${backup_name}.tar.bz2 \
+    -f -e $oss_endpoint -i $oss_accesskeyid -k $oss_accesskeysecret \
+    >$logs_dir/${backup_name}_upload.log 2>&1
+
 }
 
 # 删除之前的备份(一般在全备完成后使用)
@@ -86,7 +111,7 @@ function delete_before_backup() {
     /bin/bash
 
   awk <$index_file -F '[, {}]*' '{print $3}' |
-    awk -v logs_dir=$logs_dir -F ':' '{if($2!=""){printf("rm -rf %s/%s.log\n", logs_dir, $2)}}' |
+    awk -v logs_dir=$logs_dir -F ':' '{if($2!=""){printf("rm -rf %s/%s_*.log\n", logs_dir, $2)}}' |
     /bin/bash
 }
 
@@ -97,7 +122,15 @@ function backup_index_file() {
 
 # 备份索引文件
 function send_index_file_to_remote() {
-  echo 'send index file ok'
+  index_name=$(basename ${index_file})_$(date -d "1 day ago" +%F)
+  backup_name=${full_backup_prefix}_${backup_date}_${backup_time}_${backup_week_day}
+
+  $ossutil_bin \
+    cp $index_file \
+    oss://$oss_bucket/$oos_namespaces/mysql/indexs/${index_name} \
+    -f -e $oss_endpoint -i $oss_accesskeyid -k $oss_accesskeysecret \
+    >$logs_dir/${backup_name}_index.log 2>&1
+
 }
 
 # 添加索引, 索引记录了当前最新的备份
@@ -134,11 +167,6 @@ function tar_backup_file() {
   cd - >/dev/null || exit
 }
 
-# 发送备份到远程
-function send_backup_to_remote() {
-  echo "send $1 remote ok"
-}
-
 # 判断是应该全备还是增量备份
 # 0:full, 1:incr
 function get_backup_type() {
@@ -157,7 +185,7 @@ function get_backup_type() {
 
 # 测试配置文件正确性
 function test_conf_file() {
-  # 判断每个变量是否在配置文件中有配置，没有则退出程序
+  # verify mysql-config
   if [ -z "$username" ]; then
     echo 'fail: configure file username not set'
     exit 2
@@ -194,6 +222,32 @@ function test_conf_file() {
     echo 'fail: configure file index_file not set'
     exit 2
   fi
+
+  # verify oss-config
+  if [ -z "$oss_bucket" ]; then
+    echo 'fail: configure file oss_bucket not set'
+    exit 2
+  fi
+  if [ -z "$oos_namespaces" ]; then
+    echo 'fail: configure file oos_namespaces not set'
+    exit 2
+  fi
+  if [ -z "$oss_endpoint" ]; then
+    echo 'fail: configure file oss_endpoint not set'
+    exit 2
+  fi
+  if [ -z "$oss_accesskeyid" ]; then
+    echo 'fail: configure file oss_accesskeyid not set'
+    exit 2
+  fi
+  if [ -z "$oss_accesskeysecret" ]; then
+    echo 'fail: configure file oss_accesskeysecret not set'
+    exit 2
+  fi
+  if [ -z "$ossutil_bin" ]; then
+    echo 'fail: configure file ossutil_bin not set'
+    exit 2
+  fi
 }
 
 # 执行
@@ -209,15 +263,15 @@ function main() {
     full_backup
     backup_ok=$?
     if [ 0 -eq "$backup_ok" ]; then
-      # 全备成功
+      ### 全备成功
       # 打包最新备份
       tar_backup_file $full_backup_prefix
       # 将tar备份发送到远程
-      # send_backup_to_remote $full_backup_prefix
+      send_backup_to_remote $full_backup_prefix
       # 备份索引文件
       backup_index_file
       # 发送索引文件到远程
-      # send_index_file_to_remote
+      send_index_file_to_remote
       # 清除之前的备份
       delete_before_backup
       # 清除索引文件
@@ -237,15 +291,15 @@ function main() {
     increment_backup
     backup_ok=$?
     if [ "$backup_ok" -eq 0 ]; then
-      # 增量备份成功
+      ### 增量备份成功
       # 打包最新备份
       tar_backup_file $increment_prefix
       # 将tar备份发送到远程
-      # send_backup_to_remote $increment_prefix
+      send_backup_to_remote $increment_prefix
       # 添加索引, 索引记录了当前最新的备份
       append_index_to_file $increment_prefix
     else
-      # 增量备份失败
+      ### 增量备份失败
       # 删除备份目录
       rm -rf ${backup_dir}/${increment_prefix}_${backup_date}_${backup_time}_${backup_week_day}
       # 记录错误日志
