@@ -39,7 +39,7 @@ ossutil64 -v
 
 
 ### 配置ossutil文件
-
+再配置文件`conf/backup.conf`中添加ossutil信息
 ```
 ### oss-config
 # 阿里云OSS Bucket
@@ -55,7 +55,6 @@ oss_accesskeysecret = jCPQ2cgJz3ZfBoc3btdCn2uHgPDdcl
 # 阿里云ossutil命令路径
 ossutil_bin = /usr/local/bin/ossutil64
 ```
-
 ossutil具体使用方法可查看[官方文档](https://help.aliyun.com/document_detail/50452.html)
 
 
@@ -77,7 +76,7 @@ git clone https://github.com/jayknoxqu/database-backup.git /usr/local/database-b
 #### 赋予脚本执行权限
 
 ```bash
-chmod +x $(find database-backup -name '*.sh')
+chmod +x $(find /usr/local/database-backup -name '*.sh')
 ```
 
 
