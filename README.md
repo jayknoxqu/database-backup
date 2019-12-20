@@ -39,7 +39,7 @@ ossutil64 -v
 
 
 ### 配置ossutil文件
-再配置文件`conf/backup.conf`中添加ossutil信息
+在配置文件`conf/backup.conf`中添加ossutil信息
 ```
 ### oss-config
 # 阿里云OSS Bucket
