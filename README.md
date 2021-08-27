@@ -91,7 +91,11 @@ chmod +x $(find /usr/local/database-backup -name '*.sh')
 15 4 * * * /usr/local/database-backup/mysql/bin/backup.sh >/dev/null 2>&1
 ```
 
+
+
 ### 恢复备份文件
+
+
 
 ##### （1）停止MySQL 服务
 
@@ -120,9 +124,8 @@ mkdir -p /var/lib/mysql
 ##### （4）准备全量备份的数据
 
 ```shell
-xtrabackup --prepare --apply-log-only --target-dir=/backup/mysql/20200730/fulldb
+xtrabackup --prepare --apply-log-only --target-dir=/mnt/backups/mysql/full_2021-08-23_04-15-01_1
 ```
-
   Tip：参数`--defaults-file=/etc/my.cnf`可指定mysql的配置文件，它会读取mysql数据的目录和binlog目录
 
 
@@ -130,17 +133,16 @@ xtrabackup --prepare --apply-log-only --target-dir=/backup/mysql/20200730/fulldb
 ##### （5）合并增量备份的数据
 
 ```shll
-xtrabackup --prepare --apply-log-only --target-dir=/backup/mysql/20200730/fulldb  --incremental-dir=/backup/mysql/20200730/incrdb
+xtrabackup --prepare --apply-log-only --target-dir=/mnt/backups/mysql/full_2021-08-23_04-15-01_1  --incremental-dir=/mnt/backups/mysql/incr_2021-08-24_04-15-01_2
 ```
-
-Tip：多份增量备份的数据重复执行合并操作即可
+  Tip：多份增量备份的数据重复执行合并操作即可
 
 
 
 ##### （6）准备合并之后的数据
 
 ```shell
-xtrabackup --prepare --target-dir=/backup/mysql/20200730/fulldb
+xtrabackup --prepare --target-dir=/mnt/backups/mysql/full_2021-08-23_04-15-01_1
 ```
 
 
@@ -148,7 +150,7 @@ xtrabackup --prepare --target-dir=/backup/mysql/20200730/fulldb
 ##### （7）恢复备份数据
 
 ```shell
-xtrabackup --copy-back --target-dir=/backup/mysql/20200730/fulldb/
+xtrabackup --copy-back --target-dir=/mnt/backups/mysql/full_2021-08-23_04-15-01_1
 ```
 
 
