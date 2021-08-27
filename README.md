@@ -91,3 +91,78 @@ chmod +x $(find /usr/local/database-backup -name '*.sh')
 15 4 * * * /usr/local/database-backup/mysql/bin/backup.sh >/dev/null 2>&1
 ```
 
+### 恢复备份文件
+
+##### （1）停止MySQL 服务
+
+```sh
+systemctl stop mysqld
+```
+
+
+
+##### （2）备份数据目录
+
+```sh
+mv /var/lib/mysql /var/lib/mysql-bak
+```
+
+
+
+##### （3）新建数据目录
+
+```sh
+mkdir -p /var/lib/mysql
+```
+
+
+
+##### （4）准备全量备份的数据
+
+```shell
+xtrabackup --prepare --apply-log-only --target-dir=/backup/mysql/20200730/fulldb
+```
+
+  Tip：参数`--defaults-file=/etc/my.cnf`可指定mysql的配置文件，它会读取mysql数据的目录和binlog目录
+
+
+
+##### （5）合并增量备份的数据
+
+```shll
+xtrabackup --prepare --apply-log-only --target-dir=/backup/mysql/20200730/fulldb  --incremental-dir=/backup/mysql/20200730/incrdb
+```
+
+Tip：多份增量备份的数据重复执行合并操作即可
+
+
+
+##### （6）准备合并之后的数据
+
+```shell
+xtrabackup --prepare --target-dir=/backup/mysql/20200730/fulldb
+```
+
+
+
+##### （7）恢复备份数据
+
+```shell
+xtrabackup --copy-back --target-dir=/backup/mysql/20200730/fulldb/
+```
+
+
+
+##### （8） 赋予文件夹权限
+
+```shell
+ chown -R mysql:mysql /var/lib/mysql
+```
+
+
+
+##### （9） 启动数据库服务
+
+```shell
+systemctl start mysqld 或者 /usr/sbin/mysqld --user=mysql &
+```
